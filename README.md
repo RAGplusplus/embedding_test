@@ -1,7 +1,5 @@
 # Embedding Test
 
-
-
 ---
 
 Set up Conda Environment
@@ -17,6 +15,12 @@ Delete Conda Environment
 ```sh
 conda deactivate
 conda env remove --name embedtest
+```
+
+Setup the Project
+```sh
+chmod +x setup.sh
+./setup.sh
 ```
 
 Getting the Dataset

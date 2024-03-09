@@ -1,0 +1,34 @@
+groq
+psycopg2-binary
+pinecone-client
+requests
+beautifulsoup4
+openai
+python-dotenv
+tqdm
+langchain
+langchainhub
+langchain-community
+langchain-openai
+langchain-pinecone
+langchain-groq
+langchain-anthropic
+colorama
+cohere
+lxml
+pytz
+langchain-google-genai
+# pinecone-datasets
+jupyter
+
+
+# google-generativeai
+# langgraph
+tiktoken
+# fireworks-ai
+# cohere
+# faiss-cpu
+# pandas
+# seaborn
+# matplotlib
+# dspy-ai

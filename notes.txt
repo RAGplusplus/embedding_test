@@ -1,0 +1,107 @@
+potential datasets:
+    https://github.com/google-research-datasets/wiki-reading
+    https://paperswithcode.com/dataset/ms-marco
+    https://www.kaggle.com/datasets/dmaso01dsta/cisi-a-dataset-for-information-retrieval
+
+actually a lot of this can be simplified through the use of a config.yaml file
+e.g.:
+    - embedding model
+    - min/max chunk size
+    - chunk delta increment
+    - overlap (oh no might just want to keep this const)
+    - min/max dimension size
+    - dimension size delta increment
+    - strategies
+    - dataset_name
+
+what do we want:
+    1) main function to test retrieval performance on docs
+       using different chunk sizes + embedding dimensions
+    2) this requires:
+        - performance logging
+        - pinecone connection
+        - chunker
+        - embedder
+    
+remember: we need to do this for the queries and docs
+          and find a place to store the results
+
+so we basically need to do a few things to prepare the data:
+    1) find dataset to store in data/
+    2) convert the dataset to pinecone metadata format
+        - might need a couple diff wrappers (prob just stick to one dataset for now)
+        - could put wrappers in utils/dataloader/ 
+    3) save the reformatted data in something like:
+        - data/<dataset>/original
+        - data/<dataset>/pinecone (or reformat)
+    4) then need to chunk it all, these can be stored in
+        - data/<dataset>/chunks/<chunking_strategy>/<chunk_size>
+        - where chunking_strategy is the name of the langchain chunker used
+        - importantly, the program should not attempt to re-chunk any
+          existing chunks --- so needs to create & check if path exists
+          before chunking begins
+    5) the data & queries need to be embedded into various dimensions
+        - either store these somewhere or immediately upsert to pinecone
+        - the queries could be embedded later on during eval 
+    6) the data needs to be upserted into pinecone with different dimensions
+        - index can be dataset name
+        - namespaces can be <chunking_strategy>-<chunk_size>-<num_dims>
+        - doc IDs -- just label with integers
+
+maybe we can include a file that lists all of the <chunking_strategy>-<chunk_size>-<num_dims>
+that have been upserted into pinecone. this prepare data file should take in params like:
+    - min/max chunk size
+    - chunk delta increment
+    - overlap (oh no might just want to keep this const)
+    - min/max dimension size
+    - dimension size delta increment
+    - strategy: maybe flags to enable particular strategy -- maybe this is overkill, just do all :)
+    - dataset_name
+from these, a list of strings of the form <chunking_strategy>-<chunk_size>-<num_dims> will be generated.
+then we need to query the pinecone index for dataset_name and get all the namespaces. then remove the 
+intersection of these lists. then find the difference of the remaining list and the paths that exist
+in the data/<dataset>/chunks/<chunking_strategy>/<chunk_size> dir. also find the intersection. the 
+intersection just needs to be upserted to pinecone. the difference needs to be created, and then upserted
+to pinecone.
+    
+for eval:
+    for each query: for each embedding dimension
+    1) need to write code to run tests on all of the data
+    2) this entails retrieving the top k docs from pinecone (no langhain -- pinecone package)
+        - the query needs to be embedded (get from config.yaml)
+        - need to retrieve from all chunk sizes and all chunking strategies
+    3) then put the doc IDs into a list
+    4) record the retrieval performance against the ground truth
+        - save the percent of exact match
+            - running total of exact matches --> then divide by total num of queries at end to store
+        - save the percent of correct docs retrieved
+            - running total of correct retrievals --> then divide by total number of retrievals in dataset to store
+        - store this all in a dict to be dumped into a json file in results/ 
+            - well if storing all in single file, doesn't need its own dir -- maybe store intermediates
+              and then have a generate_report.py that prints all of the results
+                - this might be better because then could multiprocess the eval and get results later
+    5) 🤑🤑🤑🤑🤑
+
+        
+
+from pinecone import Index
+from pinecone import Pinecone
+
+# Initialize the Pinecone client with your API key
+Pinecone.init(api_key="YOUR_API_KEY")
+
+# Create a new index
+Pinecone.create_index(
+    name="your_index_name",
+    dimension=128,  # Replace with the dimension of your vectors
+    metric="cosine"  # Replace with your preferred similarity metric
+)
+
+# Connect to the index
+index = Index("your_index_name")
+
+# Upsert records while creating a new namespace
+index.upsert(
+    vectors=[('id-1', [0.1, 0.1, 0.1, 0.1])],
+    namespace="my-first-namespace"
+)

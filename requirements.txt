@@ -1,8 +1,6 @@
 groq
-psycopg2-binary
 pinecone-client
 requests
-beautifulsoup4
 openai
 python-dotenv
 tqdm
@@ -15,8 +13,6 @@ langchain-groq
 langchain-anthropic
 colorama
 cohere
-lxml
-pytz
 langchain-google-genai
 # pinecone-datasets
 jupyter

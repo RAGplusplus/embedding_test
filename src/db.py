@@ -1,7 +1,9 @@
 import time
 from .embedder import Embedder
+from .document import Document
 from pinecone import Pinecone, ServerlessSpec
 from typing import Union
+import uuid
 
 
 class PineconeDB():
@@ -35,6 +37,10 @@ class PineconeDB():
         
         index_str = ", ".join(index_info)
         return f"PineconeDB(indexes=[{index_str}])"
+    
+    
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
     def get_index(self, index_name: str, embedder: Embedder) -> Pinecone.Index:
@@ -68,8 +74,7 @@ class PineconeDB():
                         region="us-west-2"
                     )
                 )
-                # wait for index to be initialize\=_?? 
-                -+
+                # wait for index to be initialized
                 while not self.client.describe_index(index_name).status['ready']:
                     time.sleep(1)
 
@@ -103,28 +108,86 @@ class PineconeDB():
             print(f"Index {index_name} does not exist -- cannot delete")
 
 
-
-
-
-
-    def save_embeddings(self, index_name: str, namespace: str, embedding: list[float]) -> None:
-        """Store an embedding in Pinecone"""
-        index = self.client.Index(index_name)
-        index.upsert([embedding], namespace=namespace)
-
-
-    def save_batch_embeddings(self, index_name: str, namespace: str, embeddings: list[list[float]]) -> None:
-        """Store a batch of embeddings in Pinecone"""
-        index = self.client.Index(index_name)
-        index.upsert(embeddings, namespace=namespace)
-
-    
-    def format_query(self, query: str) -> str:
-        pass
+    def format_data(self, text: str, embedder: Embedder) -> list[dict[str, str]]:
+        """Format a sample of text data for Pinecone"""
         '''
         If a tuple is used, it must be of the form (id, values, metadata) or (id, values). where id is a string, vector is a list of floats, metadata is a dict,
         and sparse_values is a dict of the form {'indices': List[int], 'values': List[float]}.
         '''
+        embedding = embedder.embed_text(text)
+
+        # create a Pinecone entry for the embedding
+        return {
+            "id": str(uuid.uuid4()),
+            "values": embedding,
+            "metadata": {
+                "source": "source",
+                "text": text
+            }
+        }
+    
+
+    # TODO: 
+    def format_batch_data(self, text_chunks: list[tuple[str, str]], embedder: Embedder) -> list[dict[str, str]]:
+        """Format a batch of text data for Pinecone"""
+        embeddings = embedder.embed_batch([chunk[1] for chunk in text_chunks])
+
+        # create a Pinecone entry for the embedding
+        return [
+            {
+                "id": str(uuid.uuid4()),
+                "values": embedding,
+                "metadata": {
+                    "source": chunk[0],
+                    "text": chunk[1]
+                }
+            } for idx, embedding in enumerate(embeddings)
+        ]
+
+
+
+    def get_embeddings(text_chunks, model="text-embedding-3-small"):
+        """
+        Takes in list of lists of form: [("url", "text"), ...]
+        And returns embeddings of form: [{"id": i, "values": [emb], "metadata": {"url": "x", "text": "y"}}, ...]
+        """
+        client = OpenAI()
+
+        # get text from each chunk for batch processing
+        texts = [chunk[1] for chunk in text_chunks]
+
+        # batch embed the text
+        embeddings_response = client.embeddings.create(input=texts, model=model).data
+
+        # create a pinecone entry for each embedding
+        return [
+            {
+                "id": str(idx),
+                "values": embedding.embedding,
+                "metadata": {
+                    "source": text_chunks[idx][0],
+                    "text": text_chunks[idx][1]
+                }
+            } for idx, embedding in enumerate(embeddings_response)
+        ]
+
+
+
+    def upsert_text(self, index_name: str, namespace: str, embedder: Embedder) -> None:
+        """Store an embedding in Pinecone"""
+        index: Pinecone.Index = self.get_index(index_name)["index"]
+        data = self.format(data, embedder)
+        index.upsert([data], namespace=namespace)
+
+
+    def upsert_batch(self, index_name: str, namespace: str, embedder: Embedder) -> None:
+        """Store a batch of embeddings in Pinecone"""
+        index = self.get_index(index_name)["index"]
+        data = self.format_batch_data(data, embedder)
+        index.upsert(data, namespace=namespace)
+
+
+
 
     # https://github.com/langchain-ai/langchain/blob/master/libs/partners/pinecone/langchain_pinecone/vectorstores.py
     # https://docs.pinecone.io/reference/describe_index_stats

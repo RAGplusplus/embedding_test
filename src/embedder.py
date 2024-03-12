@@ -53,16 +53,30 @@ class Embedder():
         return f"Embedder(model_name={self.model_name}, dim={self.dim}, metric={self.metric})"
 
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
     def embed_text(self, text: str) -> list[float]:
         """Embed a given text using the selected model"""
         text = text.replace("\n", " ")
-        return self.client.embeddings.create(input = [text], model=self.model_name).data[0].embedding
+        try:
+            embedding = self.client.embeddings.create(input = [text], model=self.model_name).data[0].embedding
+        except Exception as e:
+            print(f"Error embedding text: {str(e)}")
+            raise
+        return embedding
 
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts using the selected model"""
         texts = [text.replace("\n", " ") for text in texts]
-        return self.client.embeddings.create(input = texts, model=self.model_name).data
+        try:
+            embeddings = self.client.embeddings.create(input = texts, model=self.model_name).data
+        except Exception as e:
+            print(f"Error embedding batch of texts: {str(e)}")
+            raise
+        return embeddings
     
 
     def normalize_l2(self, x: list[float]) -> list[float]:

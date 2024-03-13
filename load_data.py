@@ -3,7 +3,7 @@ import dotenv
 from colorama import Fore
 from openai import OpenAI
 from pinecone import Pinecone
-from utils.db import PineconeDB
+from src.db import PineconeDB
 
 # load environment variables
 dotenv.load_dotenv()

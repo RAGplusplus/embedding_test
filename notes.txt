@@ -4,7 +4,8 @@ try to add:
 
 potential datasets:
     https://github.com/google-research-datasets/wiki-reading
-    https://paperswithcode.com/dataset/ms-marco
+    https://huggingface.co/datasets/ms_marco
+    https://www.kaggle.com/datasets/parthplc/ms-marco-dataset
     https://www.kaggle.com/datasets/dmaso01dsta/cisi-a-dataset-for-information-retrieval
 
 actually a lot of this can be simplified through the use of a config.yaml file

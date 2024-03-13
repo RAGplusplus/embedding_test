@@ -3,7 +3,6 @@ from .embedder import Embedder
 from .document import Document
 from pinecone import Pinecone, ServerlessSpec
 from typing import Union
-import uuid
 
 
 class PineconeDB():
@@ -108,124 +107,53 @@ class PineconeDB():
             print(f"Index {index_name} does not exist -- cannot delete")
 
 
-    def format_data(self, text: str, embedder: Embedder) -> list[dict[str, str]]:
-        """Format a sample of text data for Pinecone"""
-        '''
-        If a tuple is used, it must be of the form (id, values, metadata) or (id, values). where id is a string, vector is a list of floats, metadata is a dict,
-        and sparse_values is a dict of the form {'indices': List[int], 'values': List[float]}.
-        '''
-        embedding = embedder.embed_text(text)
-
-        # create a Pinecone entry for the embedding
-        return {
-            "id": str(uuid.uuid4()),
-            "values": embedding,
-            "metadata": {
-                "source": "source",
-                "text": text
-            }
-        }
+    def format_doc(self, doc: Document, embedder: Embedder) -> dict[str, str]:
+        """Format a document as a Pinecone entry"""
+        embedding: list[float] = embedder.embed_text(doc.text)
+        return doc.to_dict(embedding)
     
 
-    # TODO: 
-    def format_batch_data(self, text_chunks: list[tuple[str, str]], embedder: Embedder) -> list[dict[str, str]]:
-        """Format a batch of text data for Pinecone"""
-        embeddings = embedder.embed_batch([chunk[1] for chunk in text_chunks])
-
-        # create a Pinecone entry for the embedding
-        return [
-            {
-                "id": str(uuid.uuid4()),
-                "values": embedding,
-                "metadata": {
-                    "source": chunk[0],
-                    "text": chunk[1]
-                }
-            } for idx, embedding in enumerate(embeddings)
-        ]
+    def format_batch_docs(self, docs: list[Document], embedder: Embedder) -> list[dict[str, str]]:
+        """Format a batch of documents as Pinecone entries"""
+        embeddings: list[list[float]] = embedder.embed_batch([doc.text for doc in docs])
+        return [self.format_data(doc, embedding) for doc, embedding in zip(docs, embeddings)]
 
 
-
-    def get_embeddings(text_chunks, model="text-embedding-3-small"):
-        """
-        Takes in list of lists of form: [("url", "text"), ...]
-        And returns embeddings of form: [{"id": i, "values": [emb], "metadata": {"url": "x", "text": "y"}}, ...]
-        """
-        client = OpenAI()
-
-        # get text from each chunk for batch processing
-        texts = [chunk[1] for chunk in text_chunks]
-
-        # batch embed the text
-        embeddings_response = client.embeddings.create(input=texts, model=model).data
-
-        # create a pinecone entry for each embedding
-        return [
-            {
-                "id": str(idx),
-                "values": embedding.embedding,
-                "metadata": {
-                    "source": text_chunks[idx][0],
-                    "text": text_chunks[idx][1]
-                }
-            } for idx, embedding in enumerate(embeddings_response)
-        ]
-
-
-
-    def upsert_text(self, index_name: str, namespace: str, embedder: Embedder) -> None:
+    def upsert_doc(self, index_name: str, namespace: str, embedder: Embedder, doc: Document) -> None:
         """Store an embedding in Pinecone"""
-        index: Pinecone.Index = self.get_index(index_name)["index"]
-        data = self.format(data, embedder)
-        index.upsert([data], namespace=namespace)
+        try:
+            index: Pinecone.Index = self.get_index(index_name)
+            data: dict[str, str] = self.format_doc(doc, embedder)
+            index.upsert([data], namespace=namespace)
+        except Exception as e:
+            print(f"Error upserting document to index {index_name} in namespace {namespace}: {str(e)}")
+            raise
 
 
-    def upsert_batch(self, index_name: str, namespace: str, embedder: Embedder) -> None:
+    def upsert_batch(self, index_name: str, namespace: str, embedder: Embedder, docs: list[Document]) -> None:
         """Store a batch of embeddings in Pinecone"""
-        index = self.get_index(index_name)["index"]
-        data = self.format_batch_data(data, embedder)
-        index.upsert(data, namespace=namespace)
-
-
+        try:
+            index: Pinecone.Index = self.get_index(index_name)
+            data: list[dict[str, str]] = self.format_batch_docs(docs, embedder)
+            index.upsert(data, namespace=namespace)
+        except Exception as e:
+            print(f"Error upserting batch of documents to index {index_name} in namespace {namespace}: {str(e)}")
+            raise
 
 
     # https://github.com/langchain-ai/langchain/blob/master/libs/partners/pinecone/langchain_pinecone/vectorstores.py
     # https://docs.pinecone.io/reference/describe_index_stats
     # https://docs.pinecone.io/reference/describe_index
-    def query(self, index_name: str, namespace: str, query: str, embedder: Embedder, top_k: int = 5) -> list[dict[str, str]]:
-        """Query Pinecone for similar embeddings"""
-        if index_name not in self.client.list_indexes().names():
-            raise ValueError(f"Index {index_name} does not exist")
-        
-        index_description = self.client.describe_index(index_name)
-        if embedder.dim != index_description.dimension:
-            raise ValueError(f"Embedder dimension {embedder.dim} does not match index dimension {index_description.dimension}")
-        if embedder.metric != index_description.metric:
-            raise ValueError(f"Embedder metric {embedder.metric} does not match index metric {index_description.metric}")
-
-        index = self.client.Index(index_name)
-        index_stats_response = index.describe_index_stats()
-
-        if namespace not in index_stats_response["namespaces"].keys():
-            raise ValueError(f"Namespace {namespace} does not exist in index {index_name}")
-        
-        # if namespace not in self.client.describe_index(index_name).namespaces:
-        #     raise ValueError(f"Namespace {namespace} does not exist in index {index_name}")
-        return index.query(
-            namespace=namespace,
-            vector=embedder.embed_text(query),
-            top_k=top_k
-        )["matches"]
-
-    def query(self, index_name: str, namespace: str, query: str, embedder: Embedder, top_k: int = 5) -> list[dict[str, str]]:
-        """Query Pinecone for similar embeddings"""
+    def query(self, index_name: str, namespace: str, query: str, embedder: Embedder, top_k: int = 5) -> list[Document]:
+        """Query Pinecone for similar embeddings. Returns list of top_k Documents in the database."""
         try:
-            index = self.client.Index(index_name)
+            index = self.get_index(index_name)
             index_description = self.client.describe_index(index_name)
             index_stats = index.describe_index_stats()
         except Exception as e:
             raise ValueError(f"Error retrieving index information: {str(e)}")
 
+        # ensure that the embedder is compatible with the index and that the namespace exists
         if embedder.dim != index_description.dimension:
             raise ValueError(f"Embedder dimension {embedder.dim} does not match index dimension {index_description.dimension}")
         if embedder.metric != index_description.metric:
@@ -233,18 +161,57 @@ class PineconeDB():
         if namespace not in index_stats["namespaces"].keys():
             raise ValueError(f"Namespace {namespace} does not exist in index {index_name}")
 
-        return index.query(
+        # get the top_k matches
+        matches = index.query(
             namespace=namespace,
             vector=embedder.embed_text(query),
             top_k=top_k
         )["matches"]
 
-    def query_batch(self, index_name: str, namespace: str, queries: list[str], embedder: Embedder, top_k: int = 5) -> list[list[str]]:
-        """Query Pinecone for similar embeddings"""
-        if index_name not in self.client.list_indexes().names():
-            raise ValueError(f"Index {index_name} does not exist")
-        if namespace not in self.client.describe_index(index_name).namespaces:
+        # format the matches as Document objects
+        return [
+            Document(
+                source = match["metadata"]["source"],
+                text = match["metadata"]["text"],
+                id = match["id"]
+            )
+            for match in matches
+        ]
+    
+
+    def query_batch(self, index_name: str, namespace: str, queries: list[str], embedder: Embedder, top_k: int = 5) -> list[list[Document]]:
+        """Query Pinecone for similar embeddings. Returns a list of lists of top_k Documents for each query."""
+        try:
+            index = self.get_index(index_name)
+            index_description = self.client.describe_index(index_name)
+            index_stats = index.describe_index_stats()
+        except Exception as e:
+            raise ValueError(f"Error retrieving index information: {str(e)}")
+
+        # ensure that the embedder is compatible with the index and that the namespace exists
+        if embedder.dim != index_description.dimension:
+            raise ValueError(f"Embedder dimension {embedder.dim} does not match index dimension {index_description.dimension}")
+        if embedder.metric != index_description.metric:
+            raise ValueError(f"Embedder metric {embedder.metric} does not match index metric {index_description.metric}")
+        if namespace not in index_stats["namespaces"].keys():
             raise ValueError(f"Namespace {namespace} does not exist in index {index_name}")
-        index = self.client.Index(index_name)
-        queries = [embedder.embed_text(query) for query in queries]
-        return index.query(queries=queries, top_k=top_k, namespace=namespace).ids
+
+        # get the top_k matches for each query
+        matches_list = index.query(
+            namespace=namespace,
+            queries=embedder.embed_batch(queries),
+            top_k=top_k
+        )
+
+        # format the matches as Document objects
+        return [
+            [
+                Document(
+                    source=match["metadata"]["source"],
+                    text=match["metadata"]["text"],
+                    id=match["id"]
+                )
+                for match in matches
+            ]
+            for matches in matches_list
+        ]
